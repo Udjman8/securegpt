@@ -129,13 +129,17 @@ def retrieve_relevant_text(query):
         if index:
             results = index.query(vector=query_embedding, top_k=10, include_metadata=True)
             if results['matches']:
-                return "\n".join([match['metadata']['text'] for match in results['matches']])
+                retrieved_texts = [
+                    f"Source: {match['id'].split('_')[0]}\n{match['metadata']['text']}"  
+                    for match in results['matches']
+                ]
+                return "\n\n".join(retrieved_texts)  # Combining all chunks
         return "No relevant text found."
     except Exception as e:
         st.error(f"Error querying Pinecone: {e}")
         return "Error querying Pinecone."
 
-def send_to_gemini(query, retrieved_text, source):
+def send_to_gemini(query, retrieved_text):
     """Generates AI response using Gemini."""
     try:
         model = genai.GenerativeModel("gemini-2.0-flash")
@@ -146,7 +150,9 @@ def send_to_gemini(query, retrieved_text, source):
         Extracted Text:
         {retrieved_text}
         
-        Mention the source name as source: {source}.
+        At the end of your response, mention the source name as **"Source: [doc_id]"**.  
+        Find the source at the top of the text.  
+        If multiple sources exist, mention the nearest source above the answer.
         """
         response = model.generate_content(prompt)
         return response.text if response else "No response generated."
@@ -196,8 +202,8 @@ with st.sidebar:
         if st.button(f"{idx+1}. {question}", key=f"history_{idx}"):
             st.session_state.query = question
             st.session_state.selected_response = entry.split("\nA: ")[1]  # Store response
-            st.session_state.clear_main = True  # Indicate that the main page should clear
-            break  # Prevent multiple reruns
+            # st.session_state.clear_main = True  # Indicate that the main page should clear
+            # break  # Prevent multiple reruns
 
     if st.button("Clear History"):
         st.session_state.history = []  # Reset session history
@@ -280,7 +286,7 @@ if "selected_response" in st.session_state and st.session_state.selected_respons
     with st.chat_message("user"):
         st.write(f"👤 **You:** {st.session_state.query}")
     with st.chat_message("bot"):
-        st.write(f"🤖 **SECUREGPT:** {st.session_state.selected_response}")
+        st.write(f" **SECUREGPT:** {st.session_state.selected_response}")
     st.session_state.pop("selected_response")  # Remove after showing
 
 # Main chat input
@@ -289,7 +295,7 @@ query = st.text_input("Ask me anything:", key="query")
 if st.button("Submit Query"):
     if query:
         retrieved_text = retrieve_relevant_text(query)
-        response = send_to_gemini(query, retrieved_text, st.session_state.current_source)
+        response = send_to_gemini(query, retrieved_text)
         st.session_state.history.append(f"Q: {query}\nA: {response}")
 
         # Show only the latest query in the main chat
